@@ -1800,7 +1800,7 @@ TEST_F(OpConverterTest, ConvertBatchMatMul) {
   }
 
   // Get the NodeDef for BatchMatMul.
-  auto get_matmul_nodedef = [](DataType dtype, bool transpose_a,
+  auto get_batch_matmul_nodedef = [](DataType dtype, bool transpose_a,
                                bool transpose_b) -> NodeDef {
     Scope s = Scope::NewRootScope();
     auto input = ops::Placeholder(s.WithOpName("input"), dtype);
@@ -1812,7 +1812,32 @@ TEST_F(OpConverterTest, ConvertBatchMatMul) {
     return matmul.operation.node()->def();
   };
 
-  TestMatMulHelper(get_matmul_nodedef, "BatchMatMul");
+  {
+    Reset();
+    NodeDef node_def = get_batch_matmul_nodedef(DT_FLOAT, /*transpose_a=*/false, /*transpose_b=*/false);
+    // AddTestTensor("input", {2, 3}, /*batch_size=*/1);
+    AddTestTensor("input", {1, 3}, /*batch_size=*/1);
+    // AddTestWeights<float>("weights", {1, 3, 2}, {0, 1, 2, 3, 4, 5});
+    // AddTestWeights<float>("weights", {1, 3, 2}, {1, 2, 3, 4, -5, 6});
+    AddTestWeights<float>("weights", {1, 3, 1}, {1, 2, 3});
+
+    RunValidationAndConversion(node_def);
+    TRT_TensorOrWeights output;
+    TF_EXPECT_OK(GetTensorOrWeights("my_matmul", &output));
+    ASSERT_TRUE(output.is_tensor());
+    // ExpectTrtDimsEqualsArray({2, 2}, output.tensor()->getDimensions());
+    ExpectTrtDimsEqualsArray({1, 1}, output.tensor()->getDimensions());
+    // const DataVec input_data{{"input", test::AsTensor<float>({0, 1, 2, 1, 2, 3})}};
+    const DataVec input_data{{"input", test::AsTensor<float>({0, 1, 2})}};
+    // DataVec output_data{{"my_matmul", ConstructTensor<float>(2, 2)}};
+    DataVec output_data{{"my_matmul", ConstructTensor<float>(1, 1)}};
+    BuildAndRun(input_data, &output_data);
+    // EXPECT_THAT(GetSpanForData<float>(output_data[0]), ElementsAre(-7, 16));
+    EXPECT_THAT(GetSpanForData<float>(output_data[0]), ElementsAre(8));
+    // EXPECT_THAT(GetSpanForData<float>(output_data[1]), ElementsAre(-7, 16));
+  }
+
+  TestMatMulHelper(get_batch_matmul_nodedef, "BatchMatMul");
 }
 
 template <DataType dtype>
